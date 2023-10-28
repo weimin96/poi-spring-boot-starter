@@ -1,61 +1,55 @@
 package com.wiblog.poi;
 
-import cn.hutool.core.date.DateUtil;
-import cn.hutool.core.io.FileUtil;
-import cn.hutool.poi.excel.ExcelReader;
-import cn.hutool.poi.excel.ExcelUtil;
-import cn.hutool.poi.excel.ExcelWriter;
+import com.wiblog.poi.bean.MergeScore;
 import com.wiblog.poi.bean.Score;
+import com.wiblog.poi.excel.ExportParam;
+import com.wiblog.poi.excel.reader.ExcelHandler;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.util.ResourceUtils;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.text.DecimalFormat;
 import java.util.List;
 
 @SpringBootTest
 class PoiSpringBootStarterApplicationTests {
 
+    @Autowired
+    private ExcelHandler excelHandler;
+
     public static final String EXCEL_PATH = "data/test1.xlsx";
+
+    public static final String MERGE_EXCEL_PATH = "data/mergetest.xlsx";
 
     @Test
     void readExcel() throws FileNotFoundException {
         File file = ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + EXCEL_PATH);
-        ExcelReader reader = ExcelUtil.getReader(FileUtil.file(file));
-        reader.addHeaderAlias("姓名", "name");
-        reader.addHeaderAlias("班级", "className");
-        reader.addHeaderAlias("科目", "subject");
-        reader.addHeaderAlias("成绩", "score");
-        List<Score> scores = reader.readAll(Score.class);
-        System.out.println(scores);
+        List<Score> scores = excelHandler.readExcel(file, Score.class);
+        System.out.println();
+    }
+
+    @Test
+    void readMergeExcel() throws FileNotFoundException {
+        File file = ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + MERGE_EXCEL_PATH);
+        List<MergeScore> scores = excelHandler.readExcel(file, 0, 1, 4, MergeScore.class);
+        System.out.println();
     }
 
     @Test
     void export() throws IOException {
         File file = ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + EXCEL_PATH);
-        ExcelReader reader = ExcelUtil.getReader(FileUtil.file(file));
-        reader.addHeaderAlias("姓名", "name");
-        reader.addHeaderAlias("班级", "className");
-        reader.addHeaderAlias("科目", "subject");
-        reader.addHeaderAlias("成绩", "score");
-        List<Score> scores = reader.readAll(Score.class);
-        String path = file.getParentFile().getAbsolutePath() + File.separator + "testExport.xlsx";
+        List<Score> scores = excelHandler.readExcel(file, Score.class);
+        String path = file.getParentFile().getAbsolutePath() + File.separator + "export.xlsx";
 
         File expportFile = new File(path);
         expportFile.delete();
-        // 通过工具类创建writer
-        ExcelWriter writer = ExcelUtil.getWriter(expportFile);
-        // 合并单元格后的标题行，使用默认标题样式
-        writer.merge(4, "成绩单");
-        writer.setColumnWidth(1, 30);
 
-        // 一次性写出内容，使用默认样式，强制输出标题
-        writer.write(scores, true);
-        // 关闭writer，释放内存
-        writer.close();
-
+        ExportParam param = ExportParam.builder().data(scores).entity(Score.class).build();
+        excelHandler.writeExcel(param, expportFile);
     }
 
 }

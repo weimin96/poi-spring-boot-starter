@@ -1,16 +1,17 @@
 package com.wiblog.poi.excel.annotation;
 
-import java.math.BigDecimal;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.math.RoundingMode;
 
 /**
  * @author pwm
  */
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.FIELD)
 public @interface Excel {
-
-    /**
-     * 导出时在excel中排序
-     */
-    int sort() default Integer.MAX_VALUE;
 
     /**
      * 导出到Excel中的名字.
@@ -18,9 +19,29 @@ public @interface Excel {
     String name() default "";
 
     /**
-     * 日期格式, 如: yyyy-MM-dd
+     * 导入导出日期格式化, 如果是String类型，则导入时生效，如果是Date类型，则导出时生效，如: yyyy-MM-dd
      */
     String dateFormat() default "";
+
+    /**
+     * 导入导出数值格式化 例：保留两位小数：0.00
+     */
+    String numFormat() default "";
+
+    /**
+     * numFormat 舍入规则 默认:RoundingMode.HALF_UP 四舍五入（RoundingMode.FLOOR：向下取整，RoundingMode.CEILING 向上取整）
+     */
+    RoundingMode roundingMode() default RoundingMode.HALF_UP;
+
+    /**
+     * 导出时在excel中每个列的宽 单位为字符
+     */
+    int width() default 0;
+
+    /**
+     * 导出时在excel中排序
+     */
+    int sort() default Integer.MAX_VALUE;
 
     /**
      * 如果是字典类型，请设置字典的type值 (如: sys_user_sex)
@@ -28,39 +49,21 @@ public @interface Excel {
     String dictType() default "";
 
     /**
-     * 读取内容转表达式 (如: 0=男,1=女,2=未知)
+     * 导入数据时是否需要处理纵向合并，用于Bean类型
      */
-    String readConverterExp() default "";
+    boolean merge() default false;
 
     /**
-     * 分隔符，读取字符串组内容
+     * 值替换 {a,b,...}：导出{a -> b，...} ，导入 {a <- b,...}
      */
-    String separator() default ",";
+    String[] replace() default {};
 
-    /**
-     * BigDecimal 精度 默认:-1(默认不开启BigDecimal格式化)
-     */
-    int scale() default -1;
-
-    /**
-     * BigDecimal 舍入规则 默认:BigDecimal.ROUND_HALF_EVEN
-     */
-    int roundingMode() default BigDecimal.ROUND_HALF_EVEN;
 
     /**
      * 导出类型（0数字 1字符串）
      */
     ColumnType cellType() default ColumnType.STRING;
 
-    /**
-     * 导出时在excel中每个列的高度 单位为字符
-     */
-    double height() default 14;
-
-    /**
-     * 导出时在excel中每个列的宽 单位为字符
-     */
-    double width() default 16;
 
     /**
      * 文字后缀,如% 90 变成90%

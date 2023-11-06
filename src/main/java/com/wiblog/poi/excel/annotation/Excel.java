@@ -71,7 +71,7 @@ public @interface Excel {
     String suffix() default "";
 
     /**
-     * 当值为空时,字段的默认值
+     * 导出时：当值为空时,字段的默认值
      */
     String defaultValue() default "";
 

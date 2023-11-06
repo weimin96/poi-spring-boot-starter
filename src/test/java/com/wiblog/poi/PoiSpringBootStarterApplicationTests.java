@@ -3,7 +3,7 @@ package com.wiblog.poi;
 import com.wiblog.poi.bean.MergeScore;
 import com.wiblog.poi.bean.Score;
 import com.wiblog.poi.excel.ExportParam;
-import com.wiblog.poi.excel.reader.ExcelHandler;
+import com.wiblog.poi.excel.ExcelHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,7 +12,7 @@ import org.springframework.util.ResourceUtils;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.text.DecimalFormat;
+import java.util.ArrayList;
 import java.util.List;
 
 @SpringBootTest
@@ -40,9 +40,10 @@ class PoiSpringBootStarterApplicationTests {
     }
 
     @Test
-    void export() throws IOException {
+    void exportExcel() throws IOException {
         File file = ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + EXCEL_PATH);
         List<Score> scores = excelHandler.readExcel(file, Score.class);
+
         String path = file.getParentFile().getAbsolutePath() + File.separator + "export.xlsx";
 
         File expportFile = new File(path);
@@ -51,5 +52,20 @@ class PoiSpringBootStarterApplicationTests {
         ExportParam param = ExportParam.builder().data(scores).entity(Score.class).build();
         excelHandler.writeExcel(param, expportFile);
     }
+
+    @Test
+    void exportMergeExcel() throws IOException {
+        File file = ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + MERGE_EXCEL_PATH);
+        List<MergeScore> scores = excelHandler.readExcel(file, 0, 1, 4, MergeScore.class);
+
+        String path = file.getParentFile().getAbsolutePath() + File.separator + "exportMerge.xlsx";
+
+        File expportFile = new File(path);
+        expportFile.delete();
+
+        ExportParam param = ExportParam.builder().data(scores).entity(MergeScore.class).build();
+        excelHandler.writeExcel(param, expportFile);
+    }
+
 
 }

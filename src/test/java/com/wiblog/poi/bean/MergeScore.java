@@ -20,13 +20,13 @@ public class MergeScore {
     @Excel(name = "班级", replace = {"一年级(1)班", "1班", "一年级(2)班", "2班"}, width = 20)
     private String className;
 
+    @Excel(name = "成绩", merge = true)
+    private Score ss;
+
     @Excel(name = "姓名", sort = 2)
     private String name;
 
     private String test2;
-
-    @Excel(name = "成绩", merge = true)
-    private Score ss;
 
     @Excel(name = "年份")
     private Date year;
@@ -48,13 +48,16 @@ public class MergeScore {
     @Data
     static class Score {
 
-        @Excel(name = "类别", merge = true)
+        @Excel(name = "类别1", merge = true)
         private Category score;
+
+        @Excel(name = "类别2", merge = true)
+        private Category score2;
 
         private String test;
 
         @Excel(name = "平均", numFormat = "0.00", roundingMode = RoundingMode.CEILING)
-        private Double average;
+        private Double ss1;
 
         @Data
         static class Category {
@@ -62,10 +65,10 @@ public class MergeScore {
             private String test;
 
             @Excel(name = "科目", dictType = "subject", sort = 1)
-            private String subject;
+            private String sub;
 
             @Excel(name = "分数")
-            private Double score;
+            private Double score1;
         }
 
     }

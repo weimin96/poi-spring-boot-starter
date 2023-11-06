@@ -1,5 +1,6 @@
 package com.wiblog.poi.excel.reader;
 
+import ch.qos.logback.classic.util.LogbackMDCAdapter;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.bean.copier.CopyOptions;
 import cn.hutool.core.collection.CollUtil;
@@ -9,13 +10,18 @@ import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.poi.excel.ExcelUtil;
+import cn.hutool.poi.excel.RowUtil;
+import cn.hutool.poi.excel.cell.CellUtil;
 import cn.hutool.poi.excel.reader.AbstractSheetReader;
 import com.wiblog.poi.excel.annotation.Excel;
 import com.wiblog.poi.excel.bean.MergeCell;
 import com.wiblog.poi.excel.handler.IExcelDictHandler;
 import com.wiblog.poi.exception.ExcelErrorException;
+import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.util.StringUtil;
+import org.apache.poi.xssf.usermodel.XSSFCell;
 
 import java.lang.reflect.Field;
 import java.math.RoundingMode;
@@ -36,7 +42,7 @@ public class PoiBeanSheetReader<T> extends AbstractSheetReader<List<T>> {
 
     private final int endRowIndex;
 
-    private IExcelDictHandler dictHandler;
+    private final IExcelDictHandler dictHandler;
 
     private final Map<String, String> headerAlias;
 
@@ -48,7 +54,16 @@ public class PoiBeanSheetReader<T> extends AbstractSheetReader<List<T>> {
 
     private final Map<String, String> dateFormatMap;
 
-    private final Map<String, Map<String,Object>> numFormatMap;
+    private final Map<String, Map<String, Object>> numFormatMap;
+
+    private final Map<Integer, String> orderMap = new HashMap<>();
+
+    /**
+     * 合并单元格的列集合
+     */
+    private final Set<Integer> mergeSet = new HashSet<>();
+
+    private Sheet sheet;
 
     /**
      * 构造
@@ -75,7 +90,7 @@ public class PoiBeanSheetReader<T> extends AbstractSheetReader<List<T>> {
 
     @Override
     public List<T> read(Sheet sheet) {
-
+        this.sheet = sheet;
         // 获取所有字段
         Field[] fields = this.beanClass.getDeclaredFields();
         List<String> mergeList = new ArrayList<>();
@@ -90,7 +105,7 @@ public class PoiBeanSheetReader<T> extends AbstractSheetReader<List<T>> {
                 // 添加名称映射
                 addHeaderAlias(name, field.getName());
                 // 添加合并单元格映射
-                setMergeCell(field);
+                setExcelMap(field);
                 // 值替换
                 setReplaceMap(annotation, field);
                 // 时间格式化
@@ -127,89 +142,209 @@ public class PoiBeanSheetReader<T> extends AbstractSheetReader<List<T>> {
 
         // 读取header
         final List<String> headerList = aliasHeader(readRow(sheet, startRowIndex - 1));
+        // 索引-》field
+        for (int i = 0; i < headerList.size(); i++) {
+            this.orderMap.put(i, headerList.get(i));
+        }
+
+        for (Field field : fields) {
+            if (field.isAnnotationPresent(Excel.class)) {
+                Excel annotation = field.getAnnotation(Excel.class);
+                if (annotation.merge()) {
+                    MergeCell mergeCell = new MergeCell();
+                    this.mergeCellMap.put(field.getName(), mergeCell);
+                    setMergeCell(field, mergeCell, null, 1);
+                }
+            }
+        }
+
         final List<T> beanList = new ArrayList<>(endRowIndex - startRowIndex + 1);
         final CopyOptions copyOptions = CopyOptions.create().setIgnoreError(true);
         List<Object> rowList;
         for (int i = startRowIndex; i <= endRowIndex; i++) {
             // 跳过标题行
-            if (i != headerRowIndex) {
-                rowList = readRow(sheet, i);
-                if (CollUtil.isNotEmpty(rowList) || !ignoreEmptyRow) {
+            rowList = readRow(sheet, i);
+            if (CollUtil.isNotEmpty(rowList) || !ignoreEmptyRow) {
 
-                    Map<String, Object> dataMap = IterUtil.toMap(headerList, rowList, true);
-                    // 值替换
-                    handlerReplace(dataMap);
-                    // 设置翻译
-                    handlerTranslators(dataMap);
-                    // 设置日期格式
-                    handlerDateFormat(dataMap);
-                    // 设置数值格式化
-                    handlerNumFormat(dataMap);
-                    // 合并单元格处理
-                    for (String mergeName : mergeList) {
-                        initializeFields(this.mergeCellMap.get(mergeName), dataMap, 0, new HashMap<>());
-                    }
+                // 值替换
+                    handlerReplace(rowList);
+                // 设置翻译
+                handlerTranslators(rowList);
+                // 设置日期格式
+                    handlerDateFormat(rowList);
+                // 设置数值格式化
+                    handlerNumFormat(rowList);
+                Map<String, Object> dataMap = initDataMap(rowList);
+//                Map<String, Object> dataMap = IterUtil.toMap(headerList, rowList, true);
+                // 合并单元格处理
+//                for (String mergeName : mergeList) {
+//                    initializeFields(this.mergeCellMap.get(mergeName), dataMap, 0, new HashMap<>());
+//                }
 
-                    T bean = BeanUtil.toBean(dataMap, this.beanClass, copyOptions);
+                T bean = BeanUtil.toBean(dataMap, this.beanClass, copyOptions);
 
-                    beanList.add(bean);
-                }
+                beanList.add(bean);
             }
         }
         return beanList;
     }
 
-    public void handlerReplace(Map<String, Object> dataMap) {
-        for (String filedName : dataMap.keySet()) {
-            Map<String, String> repMap = replaceMap.get(filedName);
+    /**
+     * list转map
+     * @param rowList rowList
+     * @return Map
+     */
+    public Map<String, Object> initDataMap(List<Object> rowList) {
+        Map<String, Object> dataMap = new HashMap<>(32);
+        for (int i = 0; i < rowList.size(); i++) {
+            String fieldName = this.orderMap.get(i);
+            Object o = rowList.get(i);
+            // 该列不是合并单元格列
+            if (!mergeSet.contains(i)) {
+                dataMap.put(fieldName, o);
+            }
+        }
+        // 处理合并单元格
+        for (String fieldName: this.mergeCellMap.keySet()) {
+            Map<String,Object> map = new HashMap<>();
+            MergeCell mergeCell = this.mergeCellMap.get(fieldName);
+            buildMergeMap(map, mergeCell, rowList);
+            dataMap.putAll(map);
+        }
+        return dataMap;
+    }
+
+    public void buildMergeMap(Map<String,Object> map, MergeCell mergeCell, List<Object> rowList) {
+        Map<String, MergeCell> children = mergeCell.getChildren();
+        if (children == null) {
+            int index = mergeCell.getIndex();
+            Object o = rowList.get(index);
+            map.put(mergeCell.getField(), o);
+            return;
+        }
+        Map<String,Object> childrenMap = new HashMap<>(32);
+        map.put(mergeCell.getField(), childrenMap);
+        for (String fieldName: children.keySet()) {
+            MergeCell child = children.get(fieldName);
+            buildMergeMap(childrenMap, child, rowList);
+        }
+    }
+
+    /**
+     * 合并单元格映射处理
+     *
+     * @param field field
+     */
+    public void setMergeCell(Field field, MergeCell mergeCell, MergeCell parentCell, int level) {
+        Excel annotation = field.getAnnotation(Excel.class);
+        mergeCell.setField(field.getName());
+        mergeCell.setName(annotation.name());
+        if (!annotation.merge()) {
+            boolean repect = false;
+            int index = -1;
+            List<Object> objects = readRow(this.sheet, headerRowIndex + level - 2);
+            for (int i = 0; i < this.orderMap.size(); i++) {
+                if (this.orderMap.get(i).equals(field.getName())) {
+                    if (index != -1) {
+                        repect = true;
+                    }
+                    // 多个同名字段
+                    if (repect) {
+                        String parentName = parentCell.getName();
+
+                        String parentHeaderName = (String) objects.get(i);
+                        if (parentName.equals(parentHeaderName)) {
+                            index = i;
+                            break;
+                        }
+                    } else {
+                        index = i;
+                    }
+                }
+            }
+            this.mergeSet.add(index);
+            mergeCell.setIndex(index);
+            return;
+        }
+
+        Map<String, MergeCell> children = new HashMap<>(32);
+        mergeCell.setChildren(children);
+
+        Field[] fields = field.getType().getDeclaredFields();
+        for (Field child : fields) {
+            if (!child.isAnnotationPresent(Excel.class)) {
+                continue;
+            }
+            MergeCell childCell = new MergeCell();
+            setMergeCell(child, childCell, mergeCell, level + 1);
+            children.put(child.getName(), childCell);
+        }
+    }
+
+    public void handlerReplace(List<Object> row) {
+        for (int i = 0; i < row.size(); i++) {
+            String key = this.orderMap.get(i);
+            Map<String, String> repMap = replaceMap.get(key);
             if (repMap != null) {
-                String val = ObjectUtil.toString(dataMap.get(filedName));
-                for (String key: repMap.keySet()) {
-                    if (key.equals(val)) {
-                        dataMap.put(filedName, repMap.get(key));
+                String val = ObjectUtil.toString(row.get(i));
+                for (String mapKey : repMap.keySet()) {
+                    if (mapKey.equals(val)) {
+                        row.set(i, repMap.get(mapKey));
                     }
                 }
             }
         }
     }
 
-    public void handlerTranslators(Map<String, Object> dataMap) {
-        for (String filedName : dataMap.keySet()) {
-            String dictType = dictTypeMap.get(filedName);
+    public void handlerTranslators(List<Object> row) {
+        for (int i = 0; i < row.size(); i++) {
+            String dictType = dictTypeMap.get(this.orderMap.get(i));
             if (StringUtil.isNotBlank(dictType)) {
-                dataMap.put(filedName, dictHandler.toValue(dictType, ObjectUtil.toString(dataMap.get(filedName))));
+                Object o = row.get(i);
+                if (o != null) {
+                    row.set(i, dictHandler.toValue(dictType, ObjectUtil.toString(o)));
+                }
             }
         }
     }
 
-    public void handlerDateFormat(Map<String, Object> dataMap) {
-        for (String filedName : dataMap.keySet()) {
+    public void handlerDateFormat(List<Object> row) {
+        for (int i = 0; i < row.size(); i++) {
+            String filedName = this.orderMap.get(i);
             String dataFormat = dateFormatMap.get(filedName);
             if (StringUtil.isNotBlank(dataFormat)) {
                 try {
-                    Date date = (Date) dataMap.get(filedName);
-                    dataMap.put(filedName, DateUtil.format(date, dataFormat));
+                    Date date = (Date) row.get(i);
+                    row.set(i, DateUtil.format(date, dataFormat));
                 } catch (Exception ignored) {
                 }
             }
         }
     }
 
-    public void handlerNumFormat(Map<String, Object> dataMap) {
-        for (String filedName : dataMap.keySet()) {
+    public void handlerNumFormat(List<Object> row) {
+        for (int i = 0; i < row.size(); i++) {
+            String filedName = this.orderMap.get(i);
             Map<String, Object> formatMap = numFormatMap.get(filedName);
 
             if (formatMap != null) {
                 String numFormat = (String) formatMap.get("numFormat");
                 RoundingMode round = (RoundingMode) formatMap.get("round");
-                Object o = dataMap.get(filedName);
+                Object o = row.get(i);
                 if (o == null) {
                     continue;
                 }
                 DecimalFormat df = new DecimalFormat(numFormat);
                 df.setRoundingMode(round);
-                dataMap.put(filedName, df.format(o));
+                row.set(i, df.format(o));
             }
+        }
+    }
+
+    public void setDictTypeMap(Field field, Excel annotation) {
+        String dictType = annotation.dictType();
+        if (StringUtil.isNotBlank(dictType)) {
+            dictTypeMap.put(field.getName(), dictType);
         }
     }
 
@@ -245,12 +380,7 @@ public class PoiBeanSheetReader<T> extends AbstractSheetReader<List<T>> {
         }
     }
 
-    /**
-     * 合并单元格映射处理
-     *
-     * @param field field
-     */
-    public void setMergeCell(Field field) {
+    public void setExcelMap(Field field) {
         if (!field.isAnnotationPresent(Excel.class)) {
             return;
         }
@@ -270,28 +400,15 @@ public class PoiBeanSheetReader<T> extends AbstractSheetReader<List<T>> {
         if (!annotation.merge()) {
             return;
         }
-        // 合并单元格
-        MergeCell mergeCell = new MergeCell();
-        mergeCell.setField(field.getName());
-        mergeCell.setClazz(field.getType());
-        this.mergeCellMap.put(annotation.name(), mergeCell);
-
 
         Field[] fields = field.getType().getDeclaredFields();
         for (Field child : fields) {
-            setMergeCell(child);
+            setExcelMap(child);
         }
     }
 
-    /**
-     * 递归构造合并单元格的类型数据
-     *
-     * @param mergeCell 类型映射
-     * @param dataMap   所有数值映射
-     * @param index     递归层级
-     * @param fieldMap  传递嵌套类型
-     */
-    public void initializeFields(MergeCell mergeCell, Map<String, Object> dataMap, int index, Map<String, Object> fieldMap) {
+
+    /*public void initializeFields(MergeCell mergeCell, Map<String, Object> dataMap, int index, Map<String, Object> fieldMap) {
         if (mergeCell == null) {
             return;
         }
@@ -325,10 +442,10 @@ public class PoiBeanSheetReader<T> extends AbstractSheetReader<List<T>> {
             } else {
                 fieldMap.put(fieldName, value);
             }
-        }
+        }*/
 
 
-    }
+//    }
 
     @Override
     public List<String> aliasHeader(List<Object> headerList) {
@@ -356,25 +473,6 @@ public class PoiBeanSheetReader<T> extends AbstractSheetReader<List<T>> {
         }
         return header;
     }
-
-    //    /**
-//     * 设置单元格值处理逻辑<br>
-//     * 当Excel中的值并不能满足我们的读取要求时，通过传入一个编辑接口，可以对单元格值自定义，例如对数字和日期类型值转换为字符串等
-//     *
-//     * @param cellEditor 单元格值处理接口
-//     */
-//    public void setCellEditor(CellEditor cellEditor) {
-//        this.mapSheetReader.setCellEditor(cellEditor);
-//    }
-//
-//    /**
-//     * 设置是否忽略空行
-//     *
-//     * @param ignoreEmptyRow 是否忽略空行
-//     */
-//    public void setIgnoreEmptyRow(boolean ignoreEmptyRow) {
-//        this.mapSheetReader.setIgnoreEmptyRow(ignoreEmptyRow);
-//    }
 
     /**
      * 设置标题行的别名Map

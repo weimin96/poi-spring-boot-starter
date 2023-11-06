@@ -1,4 +1,4 @@
-package com.wiblog.poi.excel.reader;
+package com.wiblog.poi.excel;
 
 import cn.hutool.poi.excel.ExcelUtil;
 import cn.hutool.poi.excel.ExcelWriter;
@@ -7,6 +7,8 @@ import com.wiblog.poi.excel.ExportParam;
 import com.wiblog.poi.excel.annotation.Excel;
 import com.wiblog.poi.excel.annotation.ExcelHead;
 import com.wiblog.poi.excel.handler.IExcelDictHandler;
+import com.wiblog.poi.excel.reader.PoiExcelReader;
+import com.wiblog.poi.excel.writer.PoiExcelWriter;
 import com.wiblog.poi.util.PoiExcelUtil;
 import org.apache.poi.ss.usermodel.DataFormat;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -65,7 +67,7 @@ public class ExcelHandler {
     }
 
     public void writeExcel(ExportParam param, File file) {
-        ExcelWriter writer = ExcelUtil.getBigWriter(file);
+        PoiExcelWriter writer = PoiExcelUtil.getWriter(file);
         writeData(param, writer);
         writer.write(param.getData(), true);
         // 关闭writer，释放内存
@@ -74,7 +76,7 @@ public class ExcelHandler {
 
     public void writeExcel(HttpServletResponse response, ExportParam param) {
         // 在内存操作，写出到浏览器
-        ExcelWriter writer = ExcelUtil.getBigWriter();
+        PoiExcelWriter writer = new PoiExcelWriter();
         writeData(param, writer);
         // 设置浏览器响应的格式
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8");
@@ -92,64 +94,58 @@ public class ExcelHandler {
         }
     }
 
-    private void writeData(ExportParam param, ExcelWriter writer) {
+    private void writeData(ExportParam param, PoiExcelWriter writer) {
         // 获取类注解
-        Class<?> clazz = param.getEntity();
-        if (clazz.isAnnotationPresent(ExcelHead.class)) {
-            ExcelHead annotation = clazz.getAnnotation(ExcelHead.class);
-            int i = annotation.freezeRow();
-            if (i > 0) {
-                writer.setFreezePane(i);
-            }
-            int height = annotation.height();
-            writer.setDefaultRowHeight(height);
-        }
+//        Class<?> clazz = param.getEntity();
+//        if (clazz.isAnnotationPresent(ExcelHead.class)) {
+//            ExcelHead annotation = clazz.getAnnotation(ExcelHead.class);
+//            int i = annotation.freezeRow();
+//            if (i > 0) {
+//                writer.setFreezePane(i);
+//            }
+//            int height = annotation.height();
+//            writer.setDefaultRowHeight(height);
+//        }
+//
+//        // 获取所有字段
+//        Field[] fields = clazz.getDeclaredFields();
+//        Sheet sheet = writer.getSheet();
+//        for (int i = 0; i < fields.length; i++) {
+//            Field field = fields[i];
+//            if (field.isAnnotationPresent(Excel.class)) {
+//                Excel annotation = field.getAnnotation(Excel.class);
+//                // 设置名称
+//                String name = annotation.name();
+//                if ("".equals(name)) {
+//                    name = field.getName();
+//                }
+//                writer.addHeaderAlias(field.getName(), name);
+//
+//                // 设置宽度
+//                int width = annotation.width();
+//                if (width > 0) {
+//                    writer.setColumnWidth(i, width);
+//                }
+//
+//                // 设置时间格式转换
+//                String dateFormat = annotation.dateFormat();
+//                if (StringUtil.isNotBlank(dateFormat) && field.getType().equals(Date.class)) {
+//                    DataFormat dataFormat = writer.getWorkbook().createDataFormat();
+//                    short format = dataFormat.getFormat(dateFormat);
+//                    StyleSet styleSet = writer.getStyleSet();
+//                    styleSet.getCellStyleForDate()
+//                            .setDataFormat(format);
+//                }
+//
+//                // 设置翻译
+//
+//                String dictType = annotation.dictType();
+//                if (StringUtil.isNotBlank(dictType)) {
+//                }
+//            }
+//        }
+        writer.setExportParam(param);
 
-        // 获取所有字段
-        Field[] fields = clazz.getDeclaredFields();
-        Sheet sheet = writer.getSheet();
-        for (int i = 0; i < fields.length; i++) {
-            Field field = fields[i];
-            if (field.isAnnotationPresent(Excel.class)) {
-                Excel annotation = field.getAnnotation(Excel.class);
-                // 设置名称
-                String name = annotation.name();
-                if ("".equals(name)) {
-                    name = field.getName();
-                }
-                writer.addHeaderAlias(field.getName(), name);
-
-                // 设置宽度
-                int width = annotation.width();
-                if (width > 0) {
-                    writer.setColumnWidth(i, width);
-                }
-
-                // 设置时间格式转换
-                String dateFormat = annotation.dateFormat();
-                if (StringUtil.isNotBlank(dateFormat) && field.getType().equals(Date.class)) {
-                    DataFormat dataFormat = writer.getWorkbook().createDataFormat();
-                    short format = dataFormat.getFormat(dateFormat);
-                    StyleSet styleSet = writer.getStyleSet();
-                    styleSet.getCellStyleForDate()
-                            .setDataFormat(format);
-                }
-
-                // 设置翻译
-
-                String dictType = annotation.dictType();
-                if (StringUtil.isNotBlank(dictType)) {
-                }
-            }
-        }
-
-        //排除字段操作
-        writer.setOnlyAlias(true);
-
-        //设置sheet的名称
-        if (StringUtil.isNotBlank(param.getSheetName())) {
-            writer.renameSheet(param.getSheetName());
-        }
     }
 
 }
